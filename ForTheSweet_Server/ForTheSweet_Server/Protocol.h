@@ -40,7 +40,7 @@ struct sc_packet_login {
 	char type;
 	char id;
 	float x, y, z;
-	float lx, ly, lz;
+	float vx, vy, vz;
 };
 
 struct sc_packet_pos {
@@ -48,7 +48,7 @@ struct sc_packet_pos {
 	char type;
 	char id;
 	float x, y, z;
-	float lx, ly, lz;
+	float vx, vy, vz;
 
 };
 
@@ -57,7 +57,7 @@ struct sc_packet_put_player {
 	char type;
 	char id;
 	float x, y, z;
-	float lx, ly, lz;
+	float vx, vy, vz;
 };
 
 struct sc_packet_remove {

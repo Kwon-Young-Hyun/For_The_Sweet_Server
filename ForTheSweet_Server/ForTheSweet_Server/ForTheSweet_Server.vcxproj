@@ -84,7 +84,12 @@
       <Optimization>Disabled</Optimization>
       <SDLCheck>true</SDLCheck>
       <ConformanceMode>true</ConformanceMode>
+      <AdditionalIncludeDirectories>$(ProjectDir)Physx\include;$(ProjectDir)Physx\source\physxextensions\src;$(ProjectDir)Physx\pxshared;$(ProjectDir)Physx\source\foundation\include;$(ProjectDir)Physx\source\geomutils\include;$(ProjectDir)Physx\source\geomuils\src;$(ProjectDir)Physx\source\geomutils\src\contact;$(ProjectDir)Physx\source\geomutils\src\common;$(ProjectDir)Physx\source\geomutils\src\convex;$(ProjectDir)Physx\source\geomutils\src\sweep;$(ProjectDir)Physx\source\geomutils\src\distance;$(ProjectDir)Physx\source\geomutils\src\gjk;$(ProjectDir)Physx\source\geomutils\src\intersection;$(ProjectDir)Physx\source\geomutils\src\mesh;$(ProjectDir)Physx\source\geomutils\src\hf;$(ProjectDir)Physx\source\geomutils\src\pcm;$(ProjectDir)Physx\source\geomutils\src\ccd;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <RuntimeLibrary>MultiThreadedDebug</RuntimeLibrary>
     </ClCompile>
+    <Link>
+      <AdditionalDependencies>$(SolutionDir)x64\Debug\PhysXPvdSDK_static_64.lib;$(SolutionDir)x64\Debug\PhysXVehicle_static_64.lib;$(SolutionDir)x64\Debug\PhysXCharacterKinematic_static_64.lib;$(SolutionDir)x64\Debug\PhysXExtensions_static_64.lib;$(SolutionDir)x64\Debug\PhysXCooking_64.lib;$(SolutionDir)x64\Debug\PhysXCommon_64.lib;$(SolutionDir)x64\Debug\PhysX_64.lib;$(SolutionDir)x64\Debug\PhysXFoundation_64.lib;%(AdditionalDependencies)</AdditionalDependencies>
+    </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
@@ -115,9 +120,17 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="Physx.cpp" />
+    <ClCompile Include="Player.cpp" />
     <ClCompile Include="Server_FTS.cpp" />
+    <ClCompile Include="Timer.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="header.h" />
+    <ClInclude Include="Player.h" />
+    <ClInclude Include="Timer.h" />
+    <ClInclude Include="Util.h" />
+    <ClInclude Include="Physx.h" />
     <ClInclude Include="Protocol.h" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

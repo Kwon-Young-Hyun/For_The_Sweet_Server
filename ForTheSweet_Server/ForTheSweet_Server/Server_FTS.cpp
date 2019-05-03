@@ -2,20 +2,21 @@
 #define INITGUID
 #define _WINSOCK_DEPRECATED_NO_WARNINGS
 
-#include <iostream>
-#include <map>
-#include <vector>
-#include <thread>
-
-using namespace std;
-
-#include <winsock2.h>
-#include <windows.h>
+#include "header.h"
 #include "Protocol.h"
+#include "Player.h"
+#include "Physx.h"
+#include "Timer.h"
+#include "Util.h"
 
 #pragma comment(lib, "ws2_32.lib")
 
 #define MAX_BUFFER 1024
+
+PxVec3 PlayerInitPosition[8] = {
+	PxVec3(0, 10.1, -190), PxVec3(50, 10.1, -190), PxVec3(-50, 10.1, -190), PxVec3(100, 10.1, -190), PxVec3(-100, 10.1, -190),
+	PxVec3(150, 10.1, -190), PxVec3(-150, 10.1, -190), PxVec3(200, 10.1, -190)
+};
 
 struct OVER_EX {
 	WSAOVERLAPPED overlapped;
@@ -38,14 +39,13 @@ public:
 	SOCKET socket;
 	char packetBuffer[MAX_BUFFER];
 	int prev_size;
-	float x, y, z;
-	float lx, ly, lz;
+	CPlayer *playerinfo;
+	//float vx, vy, vz;
 	bool connected;
 
 	SOCKETINFO() : over_ex{} {
 		ZeroMemory(&over_ex.overlapped, sizeof(WSAOVERLAPPED));
-		x = y = z = 0;
-		lx = ly = lz = 0;
+		playerinfo = new CPlayer();
 		prev_size = 0;
 		connected = false;
 	}
@@ -53,8 +53,7 @@ public:
 	SOCKETINFO(SOCKET s) : over_ex{} {
 		socket = s;
 		ZeroMemory(&over_ex.overlapped, sizeof(WSAOVERLAPPED));
-		x = y = z = 0;
-		lx = ly = lz = 0;
+		playerinfo = new CPlayer();
 		prev_size = 0;
 		connected = false;
 	}
@@ -69,13 +68,7 @@ public:
 		this->over_ex.dataBuffer.len = sizeof(this->over_ex.messageBuffer);
 		memmove(this->packetBuffer, other.packetBuffer, MAX_BUFFER);
 		this->prev_size = move(other.prev_size);
-		this->x = move(other.x);
-		this->y = move(other.y);
-		this->z = move(other.z);
-		this->lx = move(other.lx);
-		this->ly = move(other.ly);
-		this->lz = move(other.lz);
-		this->connected = move(other.connected);
+		this->playerinfo = other.playerinfo;
 		return *this;
 	}
 
@@ -86,6 +79,15 @@ public:
 
 HANDLE g_iocp;
 map<char, SOCKETINFO> clients;
+
+CPhysx *gPhysx;
+
+vector<PxVec3> gMapVertex;
+vector<int> gMapIndex;
+vector<pair<int, float>> aniInfo;
+
+CGameTimer gGameTimer;
+volatile bool start = false;
 
 void error_display(const char *msg, int err_no)
 {
@@ -107,7 +109,6 @@ void ErrorDisplay(const char * location)
 	error_display(location, WSAGetLastError());
 }
 
-
 void do_recv(char id)
 {
 	DWORD flags = 0;
@@ -117,14 +118,17 @@ void do_recv(char id)
 	int retval = WSARecv(clients[id].socket, &clients[id].over_ex.dataBuffer, 1,
 		NULL, &flags, &clients[id].over_ex.overlapped, 0);
 
-	if (retval != 0)
-		// NumOfByteRecv => NULL : 받지 않겠다는 강력한 표시
-	{
+	if (0 != retval) {
 		int err_no = WSAGetLastError();
-		if (WSA_IO_PENDING != err_no) error_display("recv Error! ", err_no);
+		if (WSA_IO_PENDING != err_no)
+		{
+			cout << "Error1 - IO pending Failure\n";
+		}
+	}
+	else {
+		//cout << "Non Overlapped Recv~~~~~~~~~~~~.\n";
 	}
 }
-
 
 void sendPacket(char key, void *ptr)
 {
@@ -142,7 +146,13 @@ void sendPacket(char key, void *ptr)
 		&over->overlapped, NULL);
 	if (0 != res) {
 		int err_no = WSAGetLastError();
-		if (WSA_IO_PENDING != err_no) error_display("Send Error! ", err_no);
+		if (WSA_IO_PENDING != err_no)
+		{
+			cout << "Error1 - IO pending Failure\n";
+		}
+	}
+	else {
+		//cout << "Non Overlapped Send~~~~~~~~~~~~.\n";
 	}
 }
 
@@ -150,35 +160,32 @@ void process_packet(char key, char *buffer)
 {
 	switch (buffer[1]) {
 	case CS_CONNECT:
-		cout << "[" << int(key) << "] Clients Login\n";
+		//cout << "[" << int(key) << "] Clients Login\n";
 		sc_packet_login p_login;
 		p_login.id = key;
-		p_login.x = 0.f;
-		p_login.y = 0.f;
-		p_login.z = 0.f;
-		p_login.lx = 0.f;
-		p_login.ly = 0.f;
-		p_login.lz = 1.f;
+		p_login.x = PlayerInitPosition[key].x;
+		p_login.y = PlayerInitPosition[key].y;
+		p_login.z = PlayerInitPosition[key].z;
+		p_login.vx = 0.f;
+		p_login.vy = 0.f;
+		p_login.vz = 1.f;
 		p_login.type = SC_LOGIN;
 		p_login.size = sizeof(sc_packet_login);
 
 		sc_packet_put_player p_put;
 		p_put.id = key;
-		p_put.x = 0.f;
-		p_put.y = 0.f;
-		p_put.z = 0.f;
-		p_put.lx = 0.f;
-		p_put.ly = 0.f;
-		p_put.lz = 1.f;
+		p_put.x = PlayerInitPosition[key].x;
+		p_put.y = PlayerInitPosition[key].y;
+		p_put.z = PlayerInitPosition[key].z;
+		p_put.vx = 0.f;
+		p_put.vy = 0.f;
+		p_put.vz = 1.f;
 		p_put.type = SC_PUT_PLAYER;
 		p_put.size = sizeof(sc_packet_put_player);
 
-		clients[key].x = 0.f;
-		clients[key].y = 0.f;
-		clients[key].z = 0.f;
-		clients[key].lx = 0.f;
-		clients[key].ly = 0.f;
-		clients[key].lz = 1.f;
+		clients[key].playerinfo->setPosition(PlayerInitPosition[key]);
+		clients[key].playerinfo->setVelocity(PxVec3(0, 0, 1));
+		clients[key].playerinfo->setPlayerController(gPhysx);
 		clients[key].connected = true;
 
 		// 자신(key)과 다른 클라에게 자기 위치 정보 Send
@@ -187,9 +194,14 @@ void process_packet(char key, char *buffer)
 			if (clients[i].connected)
 			{
 				if (i == key)
-					sendPacket(key, &p_login);
+				{
+					cout << "Login Packet Send\n";
+					sendPacket(i, &p_login);
+				}
 				else
+				{
 					sendPacket(i, &p_put);
+				}
 			}
 		}
 		// 로그인 시, 접속 중인 다른 클라 위치 정보를 자신에게 Send
@@ -200,12 +212,12 @@ void process_packet(char key, char *buffer)
 				if (i != key) 
 				{
 					p_put.id = i;
-					p_put.x = clients[i].x;
-					p_put.y = clients[i].y;
-					p_put.z = clients[i].z;
-					p_put.lx = clients[i].lx;
-					p_put.ly = clients[i].ly;
-					p_put.lz = clients[i].lz;
+					p_put.x = clients[i].playerinfo->m_Pos.x;
+					p_put.y = clients[i].playerinfo->m_Pos.y;
+					p_put.z = clients[i].playerinfo->m_Pos.z;
+					p_put.vx = clients[i].playerinfo->m_Vel.x;
+					p_put.vy = clients[i].playerinfo->m_Vel.y;
+					p_put.vz = clients[i].playerinfo->m_Vel.z;
 					p_put.type = SC_PUT_PLAYER;
 					p_put.size = sizeof(sc_packet_put_player);
 					sendPacket(key, &p_put);
@@ -219,38 +231,39 @@ void process_packet(char key, char *buffer)
 		break;
 
 	case CS_MOVE:
-		cout << "[" << int(key) << "] Clients Move\n";
+		//cout << "[" << int(key) << "] Clients Move\n";
 		cs_packet_move *p_move;
 		p_move = reinterpret_cast<cs_packet_move*>(buffer);
-		//cout << "0x" << hex << p_move->flag << endl;
 
 		float distance = 1.f;
 
 		if (p_move->flag & 0x01) {  // forward
-			clients[key].lz = -1.f;
-			clients[key].z += distance;
+			clients[key].playerinfo->m_Vel.z = -1.f;
+			//clients[key].playerinfo->m_Pos.z += distance;
 		}
 		if (p_move->flag & 0x02) {	// backward
-			clients[key].lz = 1.f;
-			clients[key].z -= distance;
+			clients[key].playerinfo->m_Vel.z = 1.f;
+			//clients[key].playerinfo->m_Pos.z -= distance;
 		}
 		if (p_move->flag & 0x04) {	// left
-			clients[key].lx = 1.f;
-			clients[key].x -= distance;
+			clients[key].playerinfo->m_Vel.x = 1.f;
+			//clients[key].playerinfo->m_Pos.x -= distance;
 		}
 		if (p_move->flag & 0x08) {	// right
-			clients[key].lx = -1.f;
-			clients[key].x += distance;
+			clients[key].playerinfo->m_Vel.x = -1.f;
+			//clients[key].playerinfo->m_Pos.x += distance;
 		}
+
+		clients[key].playerinfo->m_Vel = Normalize(clients[key].playerinfo->m_Vel);
 
 		sc_packet_pos p_pos;
 		p_pos.id = key;
-		p_pos.x = clients[key].x;
-		p_pos.y = clients[key].y;
-		p_pos.z = clients[key].z;
-		p_pos.lx = clients[key].lx;
-		p_pos.ly = clients[key].ly;
-		p_pos.lz = clients[key].lz;
+		p_pos.x = clients[key].playerinfo->m_Pos.x;
+		p_pos.y = clients[key].playerinfo->m_Pos.y;
+		p_pos.z = clients[key].playerinfo->m_Pos.z;
+		p_pos.vx = clients[key].playerinfo->m_Vel.x;
+		p_pos.vy = clients[key].playerinfo->m_Vel.y;
+		p_pos.vz = clients[key].playerinfo->m_Vel.z;
 		p_pos.type = SC_POS;
 		p_pos.size = sizeof(sc_packet_pos);
 		
@@ -268,7 +281,7 @@ void worker_thread()
 {
 	while (true)
 	{
-		DWORD io_byte;
+		ULONG io_byte;
 		ULONG io_key;
 		OVER_EX *over_ex;
 
@@ -276,9 +289,9 @@ void worker_thread()
 
 		char key = static_cast<char>(io_key);
 
-		if (io_byte == 0)
-		{
-			cout << "[" << int(key) << "] Clients Disconnect\n";
+		if (is_error == FALSE) {
+			//cout << "Error in GQCS\n";
+			//cout << "[" << int(key) << "] Clients Disconnect\n";
 			sc_packet_remove p_remove;
 			p_remove.id = key;
 			p_remove.type = SC_REMOVE;
@@ -291,7 +304,26 @@ void worker_thread()
 						sendPacket(i, &p_remove);
 					else
 						clients[i].connected = false;
-			}	
+			}
+			continue;
+		}
+		if (io_byte == 0)
+		{
+			//cout << "[" << int(key) << "] Clients Disconnect\n";
+			sc_packet_remove p_remove;
+			p_remove.id = key;
+			p_remove.type = SC_REMOVE;
+			p_remove.size = sizeof(sc_packet_remove);
+
+			for (int i = 0; i < MAX_USER; ++i)
+			{
+				if (clients[i].connected)
+					if (i != key)
+						sendPacket(i, &p_remove);
+					else
+						clients[i].connected = false;
+			}
+			continue;
 		}
 
 		if (true == over_ex->is_recv) {
@@ -329,7 +361,7 @@ void worker_thread()
 			do_recv(key);
 		}
 		else {
-			//cout << "mmmmmmmmmmmmmmm\n";
+			//cout << "[" << int(key) << "] Clients Send Packet\n";
 			delete over_ex;
 		}
 	}
@@ -375,7 +407,6 @@ void do_accept()
 		return;
 	}
 
-	
 	while (1)
 	{
 		SOCKADDR_IN clientAddr;
@@ -390,6 +421,8 @@ void do_accept()
 			cout << "Error - Accept Failure\n";
 			return;
 		}
+
+		start = true;
 
 		int new_id = -1;
 		for (int i = 0; i < MAX_USER; ++i) {
@@ -423,8 +456,171 @@ void do_accept()
 	return;
 }
 
+void clientInputProcess()
+{
+	for (char i = 0; i < MAX_USER; ++i)
+	{
+		if (clients[i].connected == true)
+		{
+			PxVec3 direction = clients[i].playerinfo->m_Vel;
+			float elapsedTime = gGameTimer.GetTimeElapsed();
+
+			PxVec3 distance = -direction * elapsedTime * 20.f;
+
+			PxControllerFilters filters;
+			clients[i].playerinfo->m_PlayerController->move(distance, 0, 1/60, filters);
+		}
+	}
+}
+
+void clientUpdateProcess()
+{
+	for (char i = 0; i < MAX_USER; ++i)
+	{
+		if (clients[i].connected == true)
+		{
+			PxExtendedVec3 position = clients[i].playerinfo->m_PlayerController->getFootPosition();
+			//cout << position.x << "," << position.y << "," << position.z << endl;
+
+			clients[i].playerinfo->m_Pos = PXExtoPX(position);
+		}
+	}
+}
+
+void broadcastPosPacket()
+{
+	for (char i = 0; i < MAX_USER; ++i)
+	{
+		if (clients[i].connected == true)
+		{
+			//clients[i].playerinfo->m_Vel = Normalize(clients[i].playerinfo->m_Vel);
+
+			sc_packet_pos p_pos;
+			p_pos.id = i;
+			p_pos.x = clients[i].playerinfo->m_Pos.x;
+			p_pos.y = clients[i].playerinfo->m_Pos.y;
+			p_pos.z = clients[i].playerinfo->m_Pos.z;
+			p_pos.vx = clients[i].playerinfo->m_Vel.x;
+			p_pos.vy = clients[i].playerinfo->m_Vel.y;
+			p_pos.vz = clients[i].playerinfo->m_Vel.z;
+			p_pos.type = SC_POS;
+			p_pos.size = sizeof(sc_packet_pos);
+			
+			for (char j = 0; j < MAX_USER; ++j)
+			{
+				if (clients[j].connected == true)
+				{
+					cout << p_pos.x << "," << p_pos.y << "," << p_pos.z << endl;
+					sendPacket(j, &p_pos);
+				}
+			}
+		}
+	}
+}
+
+void logic()
+{
+	float PosBroadCastTime = 0.0f;
+
+	gGameTimer.Reset();
+	while (true)
+	{
+		if (start)
+		{
+			gGameTimer.Tick(60.0f);
+			PosBroadCastTime += 1.f / 60.f;
+
+			clientInputProcess();
+
+			gPhysx->m_Scene->simulate(1.f / 60.f);
+			gPhysx->m_Scene->fetchResults(true);
+
+			clientUpdateProcess();
+
+			if (PosBroadCastTime > 0.1f)
+			{
+				broadcastPosPacket();
+				PosBroadCastTime = 0.0f;
+			}
+		}
+	}
+}
+
+void mapLoad()
+{
+	ifstream in("map.txt");
+	int i;
+	float f;
+	PxVec3 vertex;
+
+	while (true) {
+		in >> i;
+		int ver_size = i;
+		for (int j = 0; j < ver_size; ++j) {
+			in >> f;
+			vertex.x = f;
+			in >> f;
+			vertex.y = f;
+			in >> f;
+			vertex.z = f;
+
+			gMapVertex.push_back(vertex);
+		}
+
+		in >> i;
+		int index_size = i;
+		for (int j = 0; j < index_size; ++j) {
+			in >> i;
+			gMapIndex.push_back(i);
+		}
+		break;
+	}
+	in.close();
+
+	PxTriangleMesh* triMesh = gPhysx->GetTriangleMesh(gMapVertex, gMapIndex);
+
+	PxVec3 scaleTmp = PxVec3(1.0f, 1.0f, 1.0f);
+
+	PxMeshScale PxScale;
+	PxScale.scale = scaleTmp;
+
+	PxTriangleMeshGeometry meshGeo(triMesh, PxScale);
+	PxTransform location(0, 0, 0);
+
+	PxMaterial* mat = gPhysx->m_Physics->createMaterial(0.2f, 0.2f, 0.2f);
+
+	PxRigidActor* m_Actor = PxCreateStatic(*gPhysx->m_Physics, location, meshGeo, *mat);
+	gPhysx->m_Scene->addActor(*m_Actor);
+}
+
+void aniLoad()
+{
+	ifstream in("ani.txt");
+	int i;
+	float f;
+	
+	while (in) {
+		in >> i;
+		in >> f;
+
+		aniInfo.push_back(make_pair(i, f));
+	}
+	in.close();
+
+	//for (auto d : aniInfo)
+	//{
+	//	cout << d.first << " : " << d.second << endl;
+	//}
+}
+
 int main()
 {
+	gPhysx = new CPhysx;
+	gPhysx->initPhysics();
+
+	mapLoad();
+	aniLoad();
+	
 	vector<thread> worker_threads;
 	g_iocp = CreateIoCompletionPort(INVALID_HANDLE_VALUE, 0, 0, 0);
 
@@ -441,6 +637,11 @@ int main()
 
 	thread accept_thread{ do_accept };
 
+	thread logic_thread{ logic };
+
 	for (auto &th : worker_threads) th.join();
 	accept_thread.join();
+	logic_thread.join();
+
+	//while (true);
 }

@@ -83,34 +83,12 @@ void do_send()
 		int key = 1;
 
 		switch (key) {
-		case CS_UP:
-			cs_packet_up up;
-			up.size = sizeof(cs_packet_up);
-			up.type = CS_UP;
+		case CS_CONNECT:
+			cs_packet_connect p_connect;
+			p_connect.size = sizeof(p_connect);
+			p_connect.type = CS_CONNECT;
 
-			retval = send(sock, (char *)&up, sizeof(cs_packet_up), 0);
-
-			break;
-
-		case CS_DOWN:
-			cs_packet_down down;
-			down.size = (char)sizeof(cs_packet_down);
-			down.type = (char)CS_DOWN;
-			retval = send(sock, (char *)&down, down.size, 0);
-			break;
-
-		case CS_LEFT:
-			cs_packet_left left;
-			left.size = (char)sizeof(cs_packet_left);
-			left.type = (char)CS_LEFT;
-			retval = send(sock, (char *)&left, left.size, 0);
-			break;
-
-		case CS_RIGHT:
-			cs_packet_right right;
-			right.size = (char)sizeof(cs_packet_right);
-			right.type = (char)CS_RIGHT;
-			retval = send(sock, (char *)&right, right.size, 0);
+			retval = send(sock, (char *)&p_connect, sizeof(cs_packet_connect), 0);
 			break;
 		}
 
